@@ -1,7 +1,11 @@
 feature
-Heart_Rate
 Blood_Oxygen_Level
-ECG
-Skin_Temperature
 Sleep_Duration
-Stress_Level
+Anomaly_Flag
+REM_Sleep_Duration
+Deep_Sleep_Duration
+Height
+Water_Intake
+Wakeups
+Age
+Calories_Intake

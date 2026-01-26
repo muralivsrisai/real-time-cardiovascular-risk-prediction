@@ -16,7 +16,7 @@ st.set_page_config(page_title="Wearable Cardiovascular Risk Predictor", layout="
 # -------------------------
 @st.cache_resource
 def load_model_and_scaler():
-    model_path_saved = "models/wearable_risk_model"   # SavedModel format
+    model_path_saved = "models/wearable_risk_model.keras"   # SavedModel format
     model_path_h5 = "models/wearable_risk_model.h5"   # HDF5 fallback
 
     if os.path.exists(model_path_saved):

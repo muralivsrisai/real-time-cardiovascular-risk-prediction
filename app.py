@@ -273,7 +273,7 @@ if submitted:
 
     # =====================================================
     # 🩺 Dynamic Risk Reduction Suggestions
-    # =====================================================
+    # ====================================================
     st.subheader("Personalized Risk Reduction Suggestions")
 
     if pred >= 0.5:

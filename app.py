@@ -216,9 +216,27 @@ if submitted:
     # -------------------------
     try:
         train_data = pd.read_csv("data/personal_health_data.csv")
+
+        # Load encoders
+        encoders = joblib.load("models/label_encoders.pkl")
+
+        cat_cols = [
+            "Gender", "Medical_Conditions", "Medication",
+            "Smoker", "Alcohol_Consumption", "Mood"
+        ]
+
+        for col in cat_cols:
+            if col in train_data.columns:
+                train_data[col] = train_data[col].astype(str).map(
+                    lambda x: encoders[col].transform([x])[0]
+                    if x in encoders[col].classes_
+                    else -1
+                )
+
         bg = train_data[features].values
         bg = scaler.transform(bg)
         bg = bg[:SHAP_SAMPLES]
+
     except Exception:
         bg = np.tile(scaler.mean_, (SHAP_SAMPLES, 1))
 

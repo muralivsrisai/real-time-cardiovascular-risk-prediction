@@ -18,7 +18,7 @@ MODEL_DIR = "models"
 RISK_THRESHOLD = 60
 TOP_K_FEATURES = 10
 MANDATORY_FEATURES = ["Age"]
-
+TIME_STEPS = 10
 
 os.makedirs(MODEL_DIR, exist_ok=True)
 
@@ -31,16 +31,11 @@ df = pd.read_csv(DATA_PATH)
 # Encode categorical columns
 # =======================
 cat_cols = [
-    "Gender",
-    "Medical_Conditions",
-    "Medication",
-    "Smoker",
-    "Alcohol_Consumption",
-    "Mood"
+    "Gender", "Medical_Conditions", "Medication",
+    "Smoker", "Alcohol_Consumption", "Mood"
 ]
 
 encoders = {}
-
 for col in cat_cols:
     le = LabelEncoder()
     df[col] = le.fit_transform(df[col].astype(str))
@@ -54,36 +49,30 @@ joblib.dump(encoders, os.path.join(MODEL_DIR, "label_encoders.pkl"))
 df["Risk"] = np.where(df["Health_Score"] < RISK_THRESHOLD, 1, 0)
 
 # =======================
-# Automatic Feature Selection (with mandatory features)
+# Feature Selection
 # =======================
 corr = df.corr(numeric_only=True)
-
-excluded_cols = ["Health_Score", "Risk"]
+excluded = ["Health_Score", "Risk"]
 
 selected_features = (
     corr["Health_Score"]
     .abs()
     .sort_values(ascending=False)
-    .drop(labels=excluded_cols, errors="ignore")
+    .drop(labels=excluded, errors="ignore")
     .head(TOP_K_FEATURES)
     .index
     .tolist()
 )
 
-# ✅ Force-include mandatory features (e.g., Age)
-for feat in MANDATORY_FEATURES:
-    if feat not in selected_features and feat in df.columns:
-        selected_features.append(feat)
+for f in MANDATORY_FEATURES:
+    if f not in selected_features:
+        selected_features.append(f)
 
-print("📌 Final model-selected features:")
-for f in selected_features:
-    print(" -", f)
-
-# Save selected features (VERY IMPORTANT)
 pd.DataFrame(selected_features, columns=["feature"]).to_csv(
-    os.path.join(MODEL_DIR, "features.csv"),
-    index=False
+    os.path.join(MODEL_DIR, "features.csv"), index=False
 )
+
+print("📌 Selected Features:", selected_features)
 
 # =======================
 # Prepare Data
@@ -92,11 +81,7 @@ X = df[selected_features].values
 y = df["Risk"].values
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.25,
-    random_state=42,
-    stratify=y
+    X, y, test_size=0.25, stratify=y, random_state=42
 )
 
 # =======================
@@ -109,53 +94,46 @@ X_test_scaled = scaler.transform(X_test)
 joblib.dump(scaler, os.path.join(MODEL_DIR, "wearable_scaler.pkl"))
 
 # =======================
-# Reshape for LSTM
-# (samples, timesteps=1, features)
+# Create Temporal Sequences
 # =======================
-X_train_3d = X_train_scaled.reshape(
-    X_train_scaled.shape[0], 1, X_train_scaled.shape[1]
-)
-X_test_3d = X_test_scaled.reshape(
-    X_test_scaled.shape[0], 1, X_test_scaled.shape[1]
-)
+def create_sequences(X, y, steps):
+    Xs, ys = [], []
+    for i in range(len(X) - steps):
+        Xs.append(X[i:i+steps])
+        ys.append(y[i+steps])
+    return np.array(Xs), np.array(ys)
+
+X_train_seq, y_train_seq = create_sequences(X_train_scaled, y_train, TIME_STEPS)
+X_test_seq, y_test_seq = create_sequences(X_test_scaled, y_test, TIME_STEPS)
 
 # =======================
 # Build Model
 # =======================
 model = Sequential([
-    LSTM(
-        64,
-        return_sequences=True,
-        input_shape=(1, X_train_3d.shape[2])
-    ),
+    LSTM(64, return_sequences=True,
+         input_shape=(TIME_STEPS, X_train_seq.shape[2])),
     Conv1D(32, kernel_size=1, activation="relu"),
     MaxPooling1D(pool_size=1),
     Flatten(),
-
     Dense(64, activation="relu"),
     Dropout(0.3),
     Dense(32, activation="relu"),
     Dense(1, activation="sigmoid")
 ])
 
-model.compile(
-    optimizer="adam",
-    loss="binary_crossentropy",
-    metrics=["accuracy"]
-)
+model.compile(optimizer="adam",
+              loss="binary_crossentropy",
+              metrics=["accuracy"])
 
 # =======================
 # Train
 # =======================
 early_stop = EarlyStopping(
-    monitor="val_loss",
-    patience=8,
-    restore_best_weights=True
+    monitor="val_loss", patience=8, restore_best_weights=True
 )
 
 model.fit(
-    X_train_3d,
-    y_train,
+    X_train_seq, y_train_seq,
     validation_split=0.1,
     epochs=40,
     batch_size=32,
@@ -164,14 +142,10 @@ model.fit(
 )
 
 # =======================
-# Evaluate
+# Evaluate & Save
 # =======================
-loss, acc = model.evaluate(X_test_3d, y_test, verbose=0)
+loss, acc = model.evaluate(X_test_seq, y_test_seq, verbose=0)
 print(f"✅ Test Accuracy: {acc:.4f}")
 
-# =======================
-# Save Model
-# =======================
 model.save(os.path.join(MODEL_DIR, "wearable_risk_model.keras"))
-
-print("✅ Model, scaler, encoders, and feature list saved successfully.")
+print("✅ Training complete.")
